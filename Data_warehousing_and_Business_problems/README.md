@@ -1,11 +1,11 @@
-[TOP_1_PERCENT_README.md](https://github.com/user-attachments/files/26480602/TOP_1_PERCENT_README.md)
 
-# 📊 Retail Data Analytics Projec
+# 📊 Retail Data Analytics Project (PostgreSQL)
 
 ## 🏗️ Medallion Data Architecture
 
 
-![Uploading Data warehousing architecture infographic.png…]()
+
+<img width="1820" height="900" alt="Data warehousing architecture infographic" src="https://github.com/user-attachments/assets/abc46c88-3ded-412b-acd6-a24fa7842a18" />
 
 
 
