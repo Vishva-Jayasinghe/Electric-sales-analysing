@@ -1,40 +1,48 @@
-[FINAL_Retail_README.md](https://github.com/user-attachments/files/26480584/FINAL_Retail_README.md)
+[TOP_1_PERCENT_README.md](https://github.com/user-attachments/files/26480602/TOP_1_PERCENT_README.md)
 
-# 📊 Retail Data Analytics Project (Medallion Architecture)
+# 📊 Retail Data Analytics Projec
 
-<img width="1536" height="1024" alt="Data warehousing architecture infographic" src="https://github.com/user-attachments/assets/42291a43-d80c-4919-8827-5889df5c00a3" />
-
-
+## 🏗️ Medallion Data Architecture
 
 
+![Uploading Data warehousing architecture infographic.png…]()
 
-## 🏗️ Medallion Architecture
 
-This project follows the Medallion Architecture:
 
-### Bronze
-Raw data ingestion
 
-### Silver
-Cleaned and transformed data
+This project is designed using the **Medallion Architecture (Bronze → Silver → Gold)** to ensure scalable, clean, and analytics-ready data.
 
-### Gold
-Business-ready star schema:
-- fact_sales
-- dim_customers
-- dim_products
-- dim_stores
+### 🥉 Bronze Layer
+- Raw ingestion from source systems
+- No transformations
 
-All analysis is performed on the Gold layer.
+### 🥈 Silver Layer
+- Data cleaning & standardization
+- Handling missing values, duplicates, formatting
+
+### 🥇 Gold Layer (Analytics Layer)
+- Star schema design:
+  - fact_sales
+  - dim_customers
+  - dim_products
+  - dim_stores
+
+👉 All business problems are solved using the **Gold Layer**, ensuring consistency and performance.
 
 ---
 
-# 📈 Business Problems & SQL Solutions
+# 📈 Key Business Problems & Advanced SQL Solutions
+
+---
 
 ## 1. Customer Value Segmentation
+
 ```sql
+CREATE TABLE customer_segment AS 
 WITH cust_rev AS (
-SELECT c.customer_key, c.name, c.age,
+SELECT c.customer_key,
+       c.name,
+       c.age,
        SUM(s.amount_usd) AS total_sales
 FROM gold.dim_customers c
 JOIN gold.fact_sales s
@@ -42,18 +50,24 @@ ON c.customer_key = s.customer_key
 GROUP BY 1,2,3
 )
 SELECT *,
-CASE WHEN total_sales >30000 THEN 'High Value'
-     WHEN total_sales BETWEEN 20000 AND 30000 THEN 'Middle Value'
-     ELSE 'Low Value'
+CASE 
+    WHEN total_sales >30000 THEN 'High Value'
+    WHEN total_sales BETWEEN 20000 AND 30000 THEN 'Middle Value'
+    ELSE 'Low Value'
 END AS cust_segment
 FROM cust_rev;
 ```
-**Insight:** Revenue concentrated in few customers  
-**Action:** Focus on retention & upselling
+
+### 💡 Insight
+Revenue is highly concentrated among a very small percentage of customers.
+
+### 🚀 Action
+Prioritize high-value customers and implement upselling strategies.
 
 ---
 
-## 2. Revenue Growth Monitoring
+## 2. Revenue Growth Monitoring (Window Functions)
+
 ```sql
 WITH sales AS (
 SELECT EXTRACT(YEAR FROM order_date) AS year,
@@ -62,132 +76,288 @@ SELECT EXTRACT(YEAR FROM order_date) AS year,
 FROM gold.fact_sales
 GROUP BY 1,2
 )
-SELECT *,
-COALESCE(LAG(total_sales) OVER (ORDER BY year, month),0) AS prev_month,
-total_sales - COALESCE(LAG(total_sales) OVER (ORDER BY year, month),0) AS growth
+SELECT year, month, total_sales,
+COALESCE(LAG(total_sales) OVER (ORDER BY year, month),0) AS prev_month_sales,
+total_sales - COALESCE(LAG(total_sales) OVER (ORDER BY year, month),0) AS growth_amount,
+CASE 
+WHEN COALESCE(LAG(total_sales) OVER (ORDER BY year, month),0)=0 THEN '0%'
+ELSE ROUND(
+(total_sales - LAG(total_sales) OVER (ORDER BY year, month))
+/ LAG(total_sales) OVER (ORDER BY year, month) * 100,2)::TEXT || '%'
+END AS growth_percent
 FROM sales;
 ```
-**Insight:** Fluctuating growth  
-**Action:** Identify trends & seasonality
+
+### 💡 Insight
+Revenue shows volatility → indicates seasonality or inconsistent demand.
+
+### 🚀 Action
+Forecast demand and stabilize revenue streams.
 
 ---
 
-## 3. Product Performance
+## 3. Product Performance Ranking
+
 ```sql
 WITH cte AS (
-SELECT p.product_name, p.category,
-SUM(amount_usd) AS total_sales
+SELECT EXTRACT(YEAR FROM order_date) AS year,
+       p.product_name,
+       p.category,
+       SUM(amount_usd) AS total_sales
 FROM gold.dim_products p
 JOIN gold.fact_sales s
 ON p.product_key = s.product_key
+GROUP BY 1,2,3
+),
+ranked AS (
+SELECT *,
+DENSE_RANK() OVER(PARTITION BY year, category ORDER BY total_sales DESC) AS rank
+FROM cte
+)
+SELECT * FROM ranked WHERE rank = 1;
+```
+
+### 💡 Insight
+Few products dominate each category.
+
+### 🚀 Action
+Focus inventory & marketing on top-performing SKUs.
+
+---
+
+## 4. Customer Retention & Loyalty Segmentation
+
+```sql
+CREATE TABLE customer_loyalty AS 
+WITH customer_orders AS (
+SELECT c.customer_key,
+       c.name,
+       COUNT(DISTINCT s.order_number) AS total_orders
+FROM gold.dim_customers c
+LEFT JOIN gold.fact_sales s
+ON s.customer_key = c.customer_key
+GROUP BY c.customer_key, c.name
+)
+SELECT *,
+CASE 
+WHEN total_orders >= 10 THEN 'Loyal'
+WHEN total_orders BETWEEN 2 AND 9 THEN 'Repeat'
+WHEN total_orders = 1 THEN 'One-Time'
+ELSE 'No Purchase'
+END AS customer_segment
+FROM customer_orders;
+```
+
+### 💡 Insight
+Extremely low loyal customers → weak retention.
+
+### 🚀 Action
+Introduce loyalty programs & retention campaigns.
+
+---
+
+## 5. Regional Sales Analysis
+
+```sql
+WITH customer_spending AS (
+SELECT c.customer_key,
+       c.country,
+       c.state,
+       EXTRACT(YEAR FROM s.order_date) AS year,
+       SUM(s.amount_usd) AS total_spent
+FROM gold.fact_sales s
+JOIN gold.dim_customers c
+ON s.customer_key = c.customer_key
+GROUP BY 1,2,3,4
+),
+country_avg AS (
+SELECT year, country, state,
+ROUND(AVG(total_spent),3) AS avg_customer_spending
+FROM customer_spending
+GROUP BY 1,2,3
+),
+ranked AS (
+SELECT *,
+DENSE_RANK() OVER(PARTITION BY year, country ORDER BY avg_customer_spending DESC) AS rank
+FROM country_avg
+)
+SELECT * FROM ranked WHERE rank = 1;
+```
+
+### 💡 Insight
+Customer spending varies significantly across regions.
+
+### 🚀 Action
+Adopt region-specific pricing & marketing.
+
+---
+
+## 6. Store Performance Benchmarking
+
+```sql
+WITH store_metrics AS (
+SELECT EXTRACT(YEAR FROM s.order_date) AS year,
+       st.store_key,
+       st.country,
+       st.state,
+       SUM(s.amount_usd) AS total_sales,
+       COUNT(DISTINCT s.order_number) AS total_orders
+FROM gold.fact_sales s
+JOIN gold.dim_stores st
+ON s.store_key = st.store_key
+WHERE st.country != 'Online'
+GROUP BY 1,2,3,4
+),
+ranked AS (
+SELECT *,
+DENSE_RANK() OVER(PARTITION BY country, year ORDER BY total_sales DESC) AS revenue_rank,
+DENSE_RANK() OVER(PARTITION BY country, year ORDER BY total_orders DESC) AS order_rank
+FROM store_metrics
+)
+SELECT * FROM ranked
+WHERE revenue_rank = 1 AND order_rank = 1;
+```
+
+### 💡 Insight
+Top performance concentrated in few regions.
+
+### 🚀 Action
+Replicate high-performing store strategies.
+
+---
+
+## 7. Profitability Analysis
+
+```sql
+WITH cte AS (
+SELECT EXTRACT(YEAR FROM s.order_date) AS year,
+       p.product_name,
+       SUM(s.amount_usd - (s.quantity * p.unit_cost)) AS profit
+FROM gold.fact_sales s
+JOIN gold.dim_products p
+ON s.product_key = p.product_key
 GROUP BY 1,2
 ),
 ranked AS (
 SELECT *,
-DENSE_RANK() OVER(PARTITION BY category ORDER BY total_sales DESC) AS rank
+DENSE_RANK() OVER(PARTITION BY year ORDER BY profit DESC) AS rank
 FROM cte
 )
-SELECT * FROM ranked WHERE rank=1;
+SELECT * FROM ranked WHERE rank = 1;
 ```
-**Insight:** Few products dominate  
-**Action:** Optimize inventory
+
+### 💡 Insight
+Profit driven by few high-margin products.
+
+### 🚀 Action
+Focus on high-margin product strategy.
 
 ---
 
-## 4. Customer Retention
+## 8. Category Contribution (Window Functions)
+
 ```sql
-SELECT customer_key,
-COUNT(DISTINCT order_number) AS total_orders
-FROM gold.fact_sales
-GROUP BY 1;
-```
-**Insight:** Low loyalty  
-**Action:** Loyalty programs
-
----
-
-## 5. Regional Sales
-```sql
-SELECT country,
-AVG(amount_usd) AS avg_sales
-FROM gold.fact_sales s
-JOIN gold.dim_customers c
-ON s.customer_key=c.customer_key
-GROUP BY country;
-```
-**Insight:** Regional variation  
-**Action:** Local strategies
-
----
-
-## 6. Store Performance
-```sql
-SELECT store_key,
-SUM(amount_usd) AS total_sales
-FROM gold.fact_sales
-GROUP BY store_key;
-```
-**Insight:** Performance differs by region  
-**Action:** Replicate best stores
-
----
-
-## 7. Profitability
-```sql
-SELECT p.product_name,
-SUM(s.amount_usd - s.quantity*p.unit_cost) AS profit
+WITH cte AS (
+SELECT EXTRACT(YEAR FROM s.order_date) AS year,
+       p.category,
+       SUM(s.amount_usd - (s.quantity * p.unit_cost)) AS profit
 FROM gold.fact_sales s
 JOIN gold.dim_products p
-ON s.product_key=p.product_key
-GROUP BY 1;
+ON s.product_key = p.product_key
+GROUP BY 1,2
+)
+SELECT *,
+ROUND(profit / SUM(profit) OVER(PARTITION BY year) * 100,2)::TEXT || '%' AS contribution
+FROM cte;
 ```
-**Insight:** Profit driven by few products  
-**Action:** Focus on margins
+
+### 💡 Insight
+Category contribution shifts over time.
+
+### 🚀 Action
+Invest in high-performing categories.
 
 ---
 
-## 8. Category Contribution
+## 9. Customer Churn Analysis (Advanced)
+
 ```sql
-SELECT p.category,
-SUM(s.amount_usd) AS revenue
+CREATE TABLE customer_churn AS
+WITH cte AS (
+SELECT s.customer_key,
+       MAX(s.order_date) AS last_order_date
 FROM gold.fact_sales s
-JOIN gold.dim_products p
-ON s.product_key=p.product_key
-GROUP BY 1;
+GROUP BY 1
+)
+SELECT *,
+CURRENT_DATE - last_order_date AS days_since_last_order,
+CASE 
+WHEN CURRENT_DATE - last_order_date > 365 THEN 'Churned'
+WHEN CURRENT_DATE - last_order_date BETWEEN 240 AND 365 THEN 'At Risk'
+ELSE 'Active'
+END AS status
+FROM cte;
 ```
-**Insight:** Category dominance shifts  
-**Action:** Invest strategically
+
+### 💡 Insight
+Very high churn rate (~80%).
+
+### 🚀 Action
+Implement retention & reactivation campaigns.
 
 ---
 
-## 9. Customer Churn
-```sql
-SELECT customer_key,
-MAX(order_date) AS last_order
-FROM gold.fact_sales
-GROUP BY 1;
-```
-**Insight:** High churn  
-**Action:** Re-engagement campaigns
+## 10. Store Space Efficiency (Percentiles)
 
----
-
-## 10. Store Efficiency
 ```sql
-SELECT st.store_key,
-SUM(s.amount_usd)/st.square_meters AS revenue_per_sqm
+WITH store_perf AS (
+SELECT s.store_key,
+       st.country,
+       st.square_meters,
+       SUM(s.amount_usd) AS total_sales,
+       SUM(s.amount_usd)/NULLIF(st.square_meters,0) AS revenue_per_sqm
 FROM gold.fact_sales s
 JOIN gold.dim_stores st
-ON s.store_key=st.store_key
-GROUP BY st.store_key, st.square_meters;
+ON s.store_key = st.store_key
+GROUP BY 1,2,3
+),
+percentiles AS (
+SELECT 
+PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY revenue_per_sqm) AS p25,
+PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY revenue_per_sqm) AS p75
+FROM store_perf
+)
+SELECT sp.*,
+CASE 
+WHEN revenue_per_sqm >= p75 THEN 'Top Performer'
+WHEN revenue_per_sqm <= p25 THEN 'Underperforming'
+ELSE 'Average'
+END AS performance_category
+FROM store_perf sp
+CROSS JOIN percentiles;
 ```
-**Insight:** Underperforming stores exist  
-**Action:** Optimize or close stores
+
+### 💡 Insight
+Multiple stores underperform relative to size.
+
+### 🚀 Action
+Optimize or restructure low-performing stores.
 
 ---
 
-# 🚀 Conclusion
-- Advanced SQL (CTE, Window Functions)
-- Data Warehousing (Medallion)
-- Business Insights
+# 🏆 Project Highlights
+
+- Advanced SQL: CTEs, Window Functions, Ranking, Percentiles
+- Data Warehousing: Medallion Architecture
+- Business Thinking: Insights + Actions
+- Real-world Analytics Use Cases
+
+---
+
+# 🚀 Outcome
+
+This project demonstrates the ability to:
+- Transform raw data into business insights
+- Solve real-world business problems using SQL
+- Apply data warehousing best practices
 
